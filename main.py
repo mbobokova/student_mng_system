@@ -1,11 +1,19 @@
 from PyQt6.QtWidgets import QApplication, QVBoxLayout, QWidget, \
     QLabel, QGridLayout, QLineEdit, QPushButton, QMainWindow, QTableWidget, QTableWidgetItem, \
-    QDialog, QComboBox
+    QDialog, QComboBox, QToolBar, QStatusBar, QMessageBox
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QAction
+from PyQt6.QtGui import QAction, QIcon
 import sys
 import sqlite3
 
+
+class DatabaseConnection:
+    def __init__(self, database_file="database.db"):
+        self.database_file = database_file
+
+    def connect(self):
+        connection = sqlite3.connect(self.database_file)
+        return connection
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -15,15 +23,14 @@ class MainWindow(QMainWindow):
         # Set style
         self.setStyleSheet("background-color: #afb6cc; \
                            color: #2a2c2e")
-        self.setFixedWidth(400)
-        self.setFixedHeight(400)
+        self.setMinimumSize(800, 600)
 
         # Set menu
         file_menu_item = self.menuBar().addMenu("&File")
         help_menu_item = self.menuBar().addMenu("&Help")
         search_menu_item = self.menuBar().addMenu("&Search")
 
-        add_student_action = QAction("Add Student", self)
+        add_student_action = QAction(QIcon("icons/add.png"), "Add Student", self)
         add_student_action.triggered.connect(self.insert)
         file_menu_item.addAction(add_student_action)
 
@@ -32,8 +39,9 @@ class MainWindow(QMainWindow):
 
         about_action = QAction("About", self)
         help_menu_item.addAction(about_action)
+        about_action.triggered.connect(self.about)
 
-        search_action = QAction("Search", self)
+        search_action = QAction(QIcon("icons/search.png"), "Search", self)
         search_action.triggered.connect(self.search)
         search_menu_item.addAction(search_action)
 
@@ -46,8 +54,38 @@ class MainWindow(QMainWindow):
         self.table.verticalHeader().setVisible(False)
         self.setCentralWidget(self.table)
 
+        # Create Toolbar and elements
+        toolbar = QToolBar()
+        toolbar.setMovable(True)
+        self.addToolBar(toolbar)
+        toolbar.addAction(add_student_action)
+        toolbar.addAction(search_action)
+
+        # Create Statusbar and elements
+        self.statusbar = QStatusBar()
+        self.setStatusBar(self.statusbar)
+
+        # Detect a cell click
+        self.table.cellClicked.connect(self.cell_clicked)
+
+    def cell_clicked(self):
+        edit_button = QPushButton(QIcon("icons/edit.png"), "Edit Record")
+        edit_button.clicked.connect(self.edit)
+
+        delete_button = QPushButton(QIcon("icons/delete.png"), "Delete Record")
+        delete_button.clicked.connect(self.delete)
+
+        # Delete buttons
+        children = self.findChildren(QPushButton)
+        if children:
+            for child in children:
+                self.statusbar.removeWidget(child)
+
+        self.statusbar.addWidget(edit_button)
+        self.statusbar.addWidget(delete_button)
+
     def load_data(self):
-        connection = sqlite3.connect("database.db")
+        connection = DatabaseConnection().connect()
         result = connection.execute("SELECT * FROM students")
         self.table.setRowCount(0)
 
@@ -65,6 +103,17 @@ class MainWindow(QMainWindow):
         dialog = SearchDialog()
         dialog.exec()
 
+    def edit(self):
+        dialog = EditDialog()
+        dialog.exec()
+
+    def delete(self):
+        dialog = DeleteDialog()
+        dialog.exec()
+
+    def about(self):
+        dialog = AboutDialog()
+        dialog.exec()
 
 class InsertDialog(QDialog):
     def __init__(self):
@@ -100,7 +149,7 @@ class InsertDialog(QDialog):
         name = self.student_name.text()
         course = self.course_name.itemText(self.course_name.currentIndex())
         mobile = self.student_phone.text()
-        connection = sqlite3.connect("database.db")
+        connection = DatabaseConnection().connect()
         cursor = connection.cursor()
         cursor.execute("INSERT INTO students (name, course, mobile) VALUES (?,?,?)",
                        (name, course, mobile))
@@ -133,7 +182,7 @@ class SearchDialog(QDialog):
 
     def search(self):
         name = self.student_name.text()
-        connection = sqlite3.connect("database.db")
+        connection = DatabaseConnection().connect()
         cursor = connection.cursor()
         result = cursor.execute("SELECT * FROM students WHERE name = ?", (name,))
         rows = list(result)
@@ -144,6 +193,114 @@ class SearchDialog(QDialog):
 
         cursor.close()
         connection.close()
+
+class EditDialog(QDialog):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Edit Student Data")
+        self.setFixedWidth(300)
+        self.setFixedHeight(250)
+
+        layout = QVBoxLayout()
+
+        # Find original data
+        index = student_mng_system.table.currentRow()
+        student_name = student_mng_system.table.item(index, 1).text()
+        course_name = student_mng_system.table.item(index, 2).text()
+        student_phone = student_mng_system.table.item(index, 3).text()
+        self.student_id = student_mng_system.table.item(index, 0).text()
+
+        # Set layout of dialog
+        self.student_name = QLineEdit(student_name)
+        self.student_name.setPlaceholderText("Name")
+        layout.addWidget(self.student_name)
+
+        self.course_name = QComboBox()
+        courses = ["Art", "Astronomy", "Physics", "Math"]
+        self.course_name.addItems(courses)
+        self.course_name.setCurrentText(course_name)
+        layout.addWidget(self.course_name)
+
+        self.student_phone = QLineEdit(student_phone)
+        self.student_phone.setPlaceholderText("Phone Number")
+        layout.addWidget(self.student_phone)
+
+        button = QPushButton("Submit")
+        button.clicked.connect(self.edit_student)
+        button.clicked.connect(self.close)
+        layout.addWidget(button)
+
+        self.setLayout(layout)
+
+    def edit_student(self):
+        connection = DatabaseConnection().connect()
+        cursor = connection.cursor()
+        cursor.execute("UPDATE students SET name = ?,"
+                       " course = ?, mobile = ? WHERE id = ?",
+                       (self.student_name.text(),
+                        self.course_name.itemText(self.course_name.currentIndex()),
+                        self.student_phone.text(),
+                        self.student_id))
+        connection.commit()
+        cursor.close()
+        connection.close()
+        student_mng_system.load_data()
+
+
+class DeleteDialog(QDialog):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Delete Student Data")
+
+        # Set layout
+        layout = QGridLayout()
+
+        confirmation = QLabel("Are you sure you want to delete this record?")
+        confirmation.setStyleSheet("color: red")
+        yes = QPushButton("Yes")
+        no = QPushButton("No")
+
+        layout.addWidget(confirmation, 0, 0, 1, 2)
+        layout.addWidget(yes, 1, 0)
+        layout.addWidget(no, 1, 1)
+
+        self.setLayout(layout)
+
+        yes.clicked.connect(self.delete_student)
+        no.clicked.connect(self.close)
+
+    def delete_student(self):
+        # Get selected record for delete
+        index = student_mng_system.table.currentRow()
+        student_id = student_mng_system.table.item(index, 0).text()
+
+        connection = DatabaseConnection().connect()
+        cursor = connection.cursor()
+        cursor.execute("DELETE from students WHERE id = ?",
+                       (student_id, ))
+        connection.commit()
+        cursor.close()
+        connection.close()
+        student_mng_system.load_data()
+
+        self.close()
+
+        # Show confirmation message
+        confirmation_widget = QMessageBox()
+        confirmation_widget.setWindowTitle("Success")
+        confirmation_widget.setText("Record was deleted")
+        confirmation_widget.exec()
+
+class AboutDialog(QMessageBox):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("About")
+        content = """
+        This app was created during the course "The python mega course".
+        Feel free to modify and reuse this app.
+        """
+        self.setText(content)
+
 
 
 if __name__ == "__main__":
