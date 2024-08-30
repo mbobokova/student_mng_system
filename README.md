@@ -1,0 +1,1 @@
+This code implements a Student Management System using PyQt6 for the GUI and SQLite3 for database operations, allowing users to add, edit, delete, and search student records. The main application window, along with various dialogs, manages these CRUD operations.
